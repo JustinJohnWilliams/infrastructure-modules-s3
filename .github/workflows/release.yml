@@ -1,0 +1,49 @@
+name: "[Manual] Bump Major and Create Release"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bump
+        id: bump
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git fetch --tags
+
+          LAST_TAG=0.0.0
+          if [ ! -z "$(git tag --sort=v:refname | tail -1)" ]; then
+            LAST_TAG=$(git tag --sort=v:refname | tail -1)
+          fi
+
+          MAJOR=$(echo $LAST_TAG | awk -F "." '{print $1}' | sed 's/v//')
+          MINOR=$(echo $LAST_TAG | awk -F "." '{print $2}')
+          PATCH=$(echo $LAST_TAG | awk -F "." '{print $3}')
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            NEW_TAG="v$((MAJOR + 1)).0.0"
+          fi
+
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+          git tag -am "Tagging for release ${NEW_TAG}" "${NEW_TAG}"
+          git push origin "${NEW_TAG}"
+      - name: Create Release
+        id: create-release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: ${{ steps.bump.outputs.tag }}
+          generate_release_notes: true
+          target_commitish: ${{ github.ref }}
+      - name: Create Summary
+        run: |
+          echo "### Tag: ${{ steps.bump.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "Release: [${{ steps.bump.outputs.tag }}](${{ steps.create-release.outputs.url }})" >> $GITHUB_STEP_SUMMARY
